@@ -733,10 +733,13 @@ int STRATUM_V1_send_version(esp_transport_handle_t transport, int message_id)
 /// @param ntime The hex-encoded time value use in the block header.
 /// @param nonce The hex-encoded nonce value to use in the block header.
 /// @param version_bits The hex-encoded version bits set by miner (BIP310).
+/// @param track_timing DUAL-POOL: true to record this send_uid in request_timings[] for
+///        STRATUM_V1_get_response_time_ms(). Only the Pool A task consumes that timing, so
+///        Pool B must always pass false to avoid colliding with Pool A's ids in the shared table.
 /// @param out_sent_time_us Pointer to store the time when the share was sent.
 int STRATUM_V1_submit_share(esp_transport_handle_t transport, int send_uid, const char * username, const char * job_id,
                             const char * extranonce_2, const uint32_t ntime,
-                            const uint32_t nonce, const uint32_t version_bits, uint64_t *out_sent_time_us)
+                            const uint32_t nonce, const uint32_t version_bits, bool track_timing, uint64_t *out_sent_time_us)
 {
     char submit_msg[BUFFER_SIZE];
     snprintf(submit_msg, sizeof(submit_msg),
@@ -751,8 +754,14 @@ int STRATUM_V1_submit_share(esp_transport_handle_t transport, int send_uid, cons
     }
 
     debug_stratum_tx(submit_msg);
-    
-    stamp_tx(send_uid, now);
+
+    // DUAL-POOL: request_timings[] is shared, single-table state keyed by send_uid %
+    // MAX_REQUEST_IDS. Pool A and Pool B each keep their own send_uid counter, so an
+    // untracked Pool B stamp here would collide with Pool A's ids. Only stamp when the
+    // caller is the party that actually consumes STRATUM_V1_get_response_time_ms().
+    if (track_timing) {
+        stamp_tx(send_uid, now);
+    }
 
     return ret;
 }

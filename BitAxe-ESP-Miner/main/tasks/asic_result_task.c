@@ -32,7 +32,8 @@ static int poolb_submit_share_locked(GlobalState *g, int uid, const char *user,
     int ret = POOLB_NO_TRANSPORT;
     if (t != NULL) {
         uint64_t sent_time_us = 0;
-        ret = STRATUM_V1_submit_share(t, uid, user, jobid, extranonce2, ntime, nonce, version_bits, &sent_time_us);
+        // track_timing=false: response-time tracking is Pool A only (see stratum_api.h).
+        ret = STRATUM_V1_submit_share(t, uid, user, jobid, extranonce2, ntime, nonce, version_bits, false, &sent_time_us);
     }
     pthread_mutex_unlock(&g->transportB_lock);
     return ret;
@@ -171,6 +172,7 @@ void ASIC_result_task(void *pvParameters)
                         active_job->ntime,
                         asic_result->nonce,
                         version_bits,
+                        true,
                         &sent_time_us);
 
                     if (ret < 0) {
@@ -245,7 +247,7 @@ void ASIC_result_task(void *pvParameters)
                     if (transport != NULL) {
                         uint64_t sent_time_us = 0;
                         ret = STRATUM_V1_submit_share(transport, uid, user, rec_jobid, rec_en2,
-                                                      rec_ntime, asic_result->nonce, vbits, &sent_time_us);
+                                                      rec_ntime, asic_result->nonce, vbits, true, &sent_time_us);
                     } else {
                         ret = POOLB_NO_TRANSPORT;
                     }

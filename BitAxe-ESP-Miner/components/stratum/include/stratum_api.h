@@ -107,9 +107,15 @@ int STRATUM_V1_suggest_difficulty(esp_transport_handle_t transport, int send_uid
 
 int STRATUM_V1_extranonce_subscribe(esp_transport_handle_t transport, int send_uid);
 
+// DUAL-POOL: track_timing must be false for Pool B submits. request_timings[] is a single
+// shared table keyed by send_uid % MAX_REQUEST_IDS, and Pool A/Pool B each run their own
+// independent send_uid counter (both reset to 1 on reconnect) -- so a Pool B stamp can land
+// on the same slot Pool A is using for its own in-flight subscribe/authorize id and be
+// misread as a share response. STRATUM_V1_get_response_time_ms() is only ever consumed by
+// the Pool A task, so only Pool A should pass true.
 int STRATUM_V1_submit_share(esp_transport_handle_t transport, int send_uid, const char *username, const char *job_id,
                             const char *extranonce_2, const uint32_t ntime, const uint32_t nonce,
-                            const uint32_t version_bits, uint64_t *out_sent_time_us);
+                            const uint32_t version_bits, bool track_timing, uint64_t *out_sent_time_us);
 
 float STRATUM_V1_get_response_time_ms(int request_id, int64_t receive_time_us);
 

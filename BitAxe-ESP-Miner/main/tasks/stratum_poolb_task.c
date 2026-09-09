@@ -198,8 +198,13 @@ void stratum_poolb_task(void *pvParameters)
                         pthread_mutex_unlock(&g->valid_jobs_lock);
                     }
                     if (g->stratum_queueB.count == QUEUE_SIZE) {
-                        mining_notify *old = (mining_notify *)queue_dequeue(&g->stratum_queueB);
-                        STRATUM_V1_free_mining_notify(old);
+                        // .count is read without queue->lock above; guard against a stale
+                        // read racing us into an unconditional queue_dequeue() (which blocks
+                        // forever on an empty queue) by using the timeout variant instead.
+                        mining_notify *old = (mining_notify *)queue_dequeue_timeout(&g->stratum_queueB, 100);
+                        if (old != NULL) {
+                            STRATUM_V1_free_mining_notify(old);
+                        }
                     }
                     queue_enqueue(&g->stratum_queueB, poolb_msg.mining_notification);
                     poolb_msg.mining_notification = NULL; // ownership transferred to queue
