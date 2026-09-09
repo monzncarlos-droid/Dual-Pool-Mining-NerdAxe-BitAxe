@@ -142,8 +142,11 @@ void POWER_MANAGEMENT_task(void * pvParameters)
         power_management->chip_temp2_avg = Thermal_get_chip_temp2(GLOBAL_STATE);
 
         power_management->vr_temp = Power_get_vreg_temp(GLOBAL_STATE);
-        // User pause, hardware fault, or all pools unreachable
-        bool wants_stop = sys_module->mining_paused || sys_module->hardware_fault || sys_module->pools_unavailable;
+        // User pause, hardware fault, or all pools unreachable.
+        // DUAL-POOL: pools_unavailable only reflects Pool A and its failover, so it
+        // must not stop the ASIC while Pool B is still connected and being served.
+        bool wants_stop = sys_module->mining_paused || sys_module->hardware_fault ||
+                          (sys_module->pools_unavailable && !dual_poolb_mining(GLOBAL_STATE));
         if (wants_stop && !is_paused) {
             mining_stop(GLOBAL_STATE);
             is_paused = true;

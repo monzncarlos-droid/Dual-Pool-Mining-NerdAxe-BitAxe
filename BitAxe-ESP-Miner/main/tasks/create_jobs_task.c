@@ -271,7 +271,12 @@ void create_jobs_task(void *pvParameters)
             // we don't burn the slice generating Pool A work whose shares get dropped at
             // submit. If Pool B has no work, fall through and let Pool A take the slice.
             bool a_down = (GLOBAL_STATE->transport == NULL);
-            if (sel == POOL_B || a_down) {
+            // ...and symmetrically, don't spend Pool B's slice building work whose
+            // shares are dropped at submit because Pool B's socket is gone. Without
+            // this, a Pool B outage costs its entire share of the split rather than
+            // handing it back to a Pool A that is still up.
+            bool b_down = (GLOBAL_STATE->transportB == NULL);
+            if ((sel == POOL_B && !b_down) || a_down) {
                 if (dual_serve_pool_b(GLOBAL_STATE, &current_work_B, &extranonce_2_B)) {
                     timeout_ms = ASIC_get_asic_job_frequency_ms(GLOBAL_STATE);
                     continue;

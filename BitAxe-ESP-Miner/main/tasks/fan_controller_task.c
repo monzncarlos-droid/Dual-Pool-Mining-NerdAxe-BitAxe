@@ -72,7 +72,9 @@ void FAN_CONTROLLER_task(void * pvParameters)
             update_fan_speed(GLOBAL_STATE, 100.0f, "Overheat");
         } else if (GLOBAL_STATE->SYSTEM_MODULE.mining_paused) {
             update_fan_speed(GLOBAL_STATE, 30.0f, "Paused");
-        } else if (GLOBAL_STATE->SYSTEM_MODULE.pools_unavailable) {
+        } else if (GLOBAL_STATE->SYSTEM_MODULE.pools_unavailable && !dual_poolb_mining(GLOBAL_STATE)) {
+            // DUAL-POOL: must match power_management_task's wants_stop test. If the
+            // ASIC is kept running for Pool B, idling the fan here would cook it.
             update_fan_speed(GLOBAL_STATE, 30.0f, "No pool");
         } else {
             //enable the PID auto control for the FAN if set

@@ -245,4 +245,21 @@ typedef struct
     int block_signals_count;
 } GlobalState;
 
+// DUAL-POOL BEGIN: pools_unavailable is owned by the protocol coordinator, which
+// only ever looks at Pool A and its failover. It gates both the ASIC power-down
+// in power_management_task and the fan drop to 30% in fan_controller_task, so
+// without this a Pool A outage would stop a Pool B that is still connected and
+// mining perfectly well. Both call sites must agree: keeping the ASIC running
+// while the fan idles would cook the board.
+//
+// transportB is read without transportB_lock deliberately. This only gates a
+// periodic policy decision that is re-evaluated every poll, so being one cycle
+// stale in either direction is harmless, and taking the lock here would couple
+// the power and fan loops to Pool B's socket teardown.
+static inline bool dual_poolb_mining(const GlobalState *gs)
+{
+    return gs->dual_enable && gs->transportB != NULL;
+}
+// DUAL-POOL END
+
 #endif /* GLOBAL_STATE_H_ */
