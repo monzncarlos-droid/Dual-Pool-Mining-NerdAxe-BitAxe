@@ -6,6 +6,11 @@ Handles both firmware families:
   * AxeOS (BitAxe)          - flat stratumURL, has errorPercentage
   * NerdOS (NerdAxe/NerdQAxe) - stratum.pools[] array, no errorPercentage
 
+On the dual-pool AxeOS fork, devices with dualEnable on also get a Pool B line
+(poolBUrl/poolBSharesAccepted/poolBSharesRejected/poolBStaleDrops). Devices
+without those fields, or with Pool B configured but switched off, are
+unaffected - they render exactly as before.
+
 With --ws it also probes the live websocket. That check exists because a
 silent-but-connected websocket is not hypothetical: the dashboard trusts an
 open socket and stops polling HTTP, so a mute socket shows up to the user as
@@ -118,6 +123,42 @@ def pools_of(info):
         "accepted": info.get("sharesAccepted"),
         "rejected": info.get("sharesRejected"),
     }], "axeos")
+
+
+def poolb_of(info):
+    """Return the Pool B descriptor for this device, or None if it doesn't have one.
+
+    Pool B (system_api_json.c's "Dual mining" block: poolBUrl, poolBSharesAccepted,
+    poolBStaleDrops, etc.) only exists on the SerpentX dual-pool AxeOS fork, and only
+    while dualEnable is on - a dual-pool build with Pool B switched off has nothing
+    live to report, so it should render like any other single-pool device. NerdOS
+    and stock AxeOS omit dualEnable entirely, so the isinstance guard below is what
+    keeps this a no-op for them.
+
+    There is no live "connected" boolean for Pool B: poolBConnectionInfo is only
+    ever set by stratum_poolb_task.c on a successful connect and is never cleared
+    on drop, so - same as stratumURL on Pool A above - it can be a stale leftover.
+    It is deliberately not surfaced here rather than guessed at.
+    """
+    dual = info.get("dualEnable")
+    if not isinstance(dual, bool) or not dual:
+        return None
+
+    if info.get("poolBIsUsingFailover"):
+        where = "%s:%s (failover)" % (info.get("poolBFallbackUrl"), info.get("poolBFallbackPort"))
+    else:
+        where = "%s:%s" % (info.get("poolBUrl"), info.get("poolBPort"))
+
+    return {
+        "where": where,
+        "accepted": info.get("poolBSharesAccepted"),
+        "rejected": info.get("poolBSharesRejected"),
+        # Nonces dropped at the ASIC for Pool B. Cumulative since boot, no
+        # established baseline yet for what "climbing meaningfully" means, so
+        # this is surfaced as a raw number rather than a guessed warning
+        # threshold - see the module notes on this counter.
+        "stale": info.get("poolBStaleDrops"),
+    }
 
 
 def ws_probe(ip, family, seconds):
@@ -296,6 +337,13 @@ def main():
                 state = "up" if p["connected"] else "DOWN"
             print("        pool %-34s %-4s acc=%s rej=%s" % (
                 p["where"], state, p["accepted"], p["rejected"]))
+
+        pb = poolb_of(info)
+        if pb:
+            stale = pb["stale"]
+            stale_s = " stale=%s" % stale if isinstance(stale, (int, float)) else ""
+            print("        poolB %-33s acc=%s rej=%s%s" % (
+                pb["where"], pb["accepted"], pb["rejected"], stale_s))
 
         if ws:
             n, gap, e = ws

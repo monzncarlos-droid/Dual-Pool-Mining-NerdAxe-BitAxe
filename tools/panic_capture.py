@@ -46,6 +46,19 @@ HTTP_TIMEOUT = 8
 LOG_MAX = 4000000
 STREAM_LINES = 4000       # per-device ring held in memory for NerdOS
 
+# Websocket keepalive for NerdosStreamer. A miner that drops off without a clean
+# TCP close (exactly the crash case this tool exists for) otherwise leaves recv()
+# blocked on dead air forever, so the reconnect path below never runs. Ping/pong
+# is independent of the log stream itself, so this does not misfire on a quiet
+# device.
+STREAM_PING_INTERVAL_S = 20
+STREAM_PING_TIMEOUT_S = 20
+
+# Upper bound on a single recv() wait, as a backstop alongside the ping/pong
+# keepalive above. NerdOS only sends on log output, so long silence is normal
+# and expected - this must NOT be read as a disconnect (see run() below).
+STREAM_RECV_IDLE_S = 90
+
 
 def get_json(ip, path="/api/system/info"):
     with urllib.request.urlopen("http://%s%s" % (ip, path), timeout=HTTP_TIMEOUT) as r:
@@ -103,10 +116,20 @@ class NerdosStreamer(threading.Thread):
             while True:
                 try:
                     async with websockets.connect("ws://%s/api/ws" % self.ip,
-                                                  open_timeout=10, ping_interval=None) as ws:
+                                                  open_timeout=10,
+                                                  ping_interval=STREAM_PING_INTERVAL_S,
+                                                  ping_timeout=STREAM_PING_TIMEOUT_S) as ws:
                         self.connected = True
                         while True:
-                            msg = await ws.recv()
+                            try:
+                                msg = await asyncio.wait_for(ws.recv(), timeout=STREAM_RECV_IDLE_S)
+                            except asyncio.TimeoutError:
+                                # Quiet is normal here - NerdOS only sends on log
+                                # output, and it's the ping/pong keepalive above,
+                                # not this timeout, that actually detects a dead
+                                # peer. So: not a disconnect, don't touch self.buf
+                                # or self.connected, just keep waiting.
+                                continue
                             with self.lock:
                                 self.buf.append("%s %s" % (
                                     datetime.now().strftime("%H:%M:%S"), str(msg).rstrip()))
